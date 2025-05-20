@@ -70,5 +70,28 @@ export const signin = async (req, res) =>{
 }
 
 export const logout = async (req, res) =>{
-    res.send("logout route called")
+    try {
+        if (!req.cookies) {
+            return res.status(400).json({ message: "No cookies present" });
+        }
+
+        const refreshToken = req.cookies.refreshToken;
+        if(refreshToken){
+            try {
+                const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN);
+                await redis.del(`refresh_token:${decoded.userId}`);
+            } catch (tokenError) {
+                // If token verification fails, we still want to clear cookies
+                console.error('Token verification failed:', tokenError.message);
+            }
+        }
+
+        res.clearCookie("accessToken");
+        res.clearCookie("refreshToken");
+        res.json({message: "Logged out successfully"});
+        
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({message: "Server error", error: error.message});
+    }
 }
