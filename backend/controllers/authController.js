@@ -6,15 +6,19 @@ import { redis } from "../lib/redis.js";
 dotenv.config();
 
 const generateTokens = (userId) => {
-    const accessToken = jwt.sign({userId} , process.env.ACCESS_TOKEN_SECRET,{
-        expiresIn: "15m",
-    })
+    if (!process.env.ACCESS_TOKEN_SECRET || !process.env.REFRESH_TOKEN_SECRET) {
+        throw new Error('JWT secrets not configured');
+    }
 
-    const refreshToken = jwt.sign({userId}, process.env.REFRESH_TOKEN , {
-        expiresIn: "7d",
-    })
+    const accessToken = jwt.sign({userId}, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: "15m"
+    });
 
-    return {accessToken , refreshToken}
+    const refreshToken = jwt.sign({userId}, process.env.REFRESH_TOKEN_SECRET, {
+        expiresIn: "7d"
+    });
+
+    return {accessToken, refreshToken}
 
 };    const storeRefreshToken = async(userId, refreshToken) =>{
         await redis.set(`refresh_token:${userId}`, refreshToken, "EX", 7*24*60*60); // 7 days
@@ -100,7 +104,7 @@ export const logout = async (req, res) =>{
 
         const refreshToken = req.cookies.refreshToken;
         if(refreshToken){            try {
-                const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN);
+                const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
                 const redisKey = `refresh_token:${decoded.userId}`;
                 const deleted = await redis.del(redisKey);
                 if (!deleted) {
@@ -129,23 +133,50 @@ export const refreshToken = async (req, res) => {
             return res.status(401).json({message: "No refresh token provided"});
         }
 
-        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN);
-        const storeToken = await redis.get(`refresh_token:${decoded.userId}`);
-        if(storeToken !== refreshToken){
+        // Verify refresh token
+        let decoded;
+        try {
+            decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+        } catch (tokenError) {
+            if (tokenError.name === 'TokenExpiredError') {
+                return res.status(401).json({message: "Refresh token has expired"});
+            }
             return res.status(403).json({message: "Invalid refresh token"});
         }
-        const accessToken = jwt.sign({userId: decoded.userId}, process.env.ACCESS_TOKEN_SECRET,{expiresIn: "15m"});
 
+        // Verify token exists in Redis
+        const storedToken = await redis.get(`refresh_token:${decoded.userId}`);
+        if(!storedToken) {
+            return res.status(403).json({message: "Refresh token not found"});
+        }
+
+        // Verify token matches what's stored
+        if(storedToken !== refreshToken) {
+            return res.status(403).json({message: "Refresh token has been revoked"});
+        }
+
+        // Generate new access token
+        const accessToken = jwt.sign(
+            {userId: decoded.userId}, 
+            process.env.ACCESS_TOKEN_SECRET,
+            {expiresIn: "15m"}
+        );
+
+        // Set new access token cookie
         res.cookie("accessToken", accessToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "strict",
-            maxAge: 15 * 60 * 1000, // 15 minutes
+            maxAge: 15 * 60 * 1000 // 15 minutes
+        });
+
+        // Send success response
+        return res.json({
+            message: "Access token refreshed successfully"
         });
         
     } catch (error) {
         console.error('Refresh token error:', error);
-        res.status(500).json({message: "Server error", error: error.message});
-        
+        return res.status(500).json({message: "Server error", error: error.message});
     }
 }
