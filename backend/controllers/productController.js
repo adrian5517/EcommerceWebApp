@@ -104,3 +104,38 @@ export const deleteProduct = async (req,res) =>{
         res.status(500).json({ message: "Server error", error: error.message });
     }
 }
+
+export const getRecommendedProducts = async (req , res ) => {
+    try {
+        const products = await Product.aggregate([
+            { $sample : {size : 3}
+        },
+        {
+            $project:{
+                name:1,
+                description:1,
+                price:1,
+                category:1,
+                image:1,
+            }
+        }
+        ])
+        res.json(products);
+    } catch (error) {
+        console.error("Error fetching recommended products:", error);
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+}
+
+export const getProductsByCategory = async (req, res) => {
+    const {category} = req.params;
+    try {
+        const product = await Product.find({category})
+        res.json(product);
+        
+    } catch (error) {
+        console.error("Error fetching products by category:", error);
+        res.status(500).json({ message: "Server error", error: error.message });
+        
+    }
+}
