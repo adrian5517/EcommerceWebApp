@@ -1,3 +1,6 @@
+
+import Product from "../models/productModel.js";
+
 export default addToCart = async (req, res) => {
     try {
         const {productId} = req.body;
@@ -63,6 +66,29 @@ export const updateQuantity = async (req, res) => {
             
     } catch (error) {
         console.error("Error updating cart quantity:", error);
+        res.status(500).json({ message: "Server error", error: error.message });
+    }
+}
+
+export const getCartProducts = async (req, res) => {
+    try {
+        const cartIds = req.user.cartItems.map(item => item.id);
+
+        const products = await Product.find({ _id: { $in: cartIds } });
+
+        const cartItems = req.user.cartItems.map(cartItem => {
+            const fullProduct = products.find(prod => prod._id.toString() === cartItem.id);
+            if (!fullProduct) return null;
+
+            return {
+                ...fullProduct.toJSON(),
+                quantity: cartItem.quantity
+            };
+        }).filter(Boolean); // remove nulls if any product not found
+
+        res.json(cartItems);
+    } catch (error) {
+        console.error("Error fetching cart products:", error);
         res.status(500).json({ message: "Server error", error: error.message });
     }
 }
