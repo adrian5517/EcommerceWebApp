@@ -2,6 +2,7 @@ import User from "../models/userModel.js"
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv"
 import { redis } from "../lib/redis.js";
+import { set } from "mongoose";
 
 dotenv.config();
 
@@ -50,8 +51,7 @@ export const signup = async (req, res) =>{
         const {accessToken , refreshToken} = generateTokens(user._id)
         await storeRefreshToken(user._id,refreshToken);
 
-        setCookies(res, accessToken , refreshToken)
-        
+           setCookies(res, accessToken, refreshToken);        
         res.status(201).json({user:{
             _id: user.id,
             name:user.name,
@@ -66,7 +66,32 @@ export const signup = async (req, res) =>{
 };
 
 export const signin = async (req, res) =>{
-    res.send("Signin route called")
+    const {email , password} = req.body;
+
+    try {
+        const user = await User.findOne({email});
+        if(user && (await user.comparePassword(password))){
+         //authenticate
+         const { accessToken , refreshToken} = generateTokens(user._id)
+         await storeRefreshToken(user._id, refreshToken);
+         setCookies(res, accessToken, refreshToken)
+         res.status(200).json({
+            user:{
+                _id: user.id,
+                name:user.name,
+                email:user.email,
+                role:user.role
+            },
+            message:"User Signed In Successfully"
+         })
+        }else{
+            return res.status(400).json({message: "Invalid Credentials"})
+        }
+        
+    } catch (error) {
+        res.status(500).json({message:error.message})
+        console.log("Error in Signin Controller:", error);
+    }
 }
 
 export const logout = async (req, res) =>{
@@ -93,5 +118,19 @@ export const logout = async (req, res) =>{
     } catch (error) {
         console.error('Logout error:', error);
         res.status(500).json({message: "Server error", error: error.message});
+    }
+}
+
+export const refreshToken = async(req, res)=>{
+    try {
+        const refreshToken = req.cookies.refreshToken;
+        if(!refreshToken){
+            return res.status(401).json({message:"No refresh token provided"});
+        }
+
+        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN);
+        
+    } catch (error) {
+        
     }
 }
