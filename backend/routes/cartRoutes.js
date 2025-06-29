@@ -1,10 +1,14 @@
 import express from 'express';
-import {protectRoute, adminRoute} from '../middleware/authMiddleware.js';
+import {protectRoute,} from '../middleware/authMiddleware.js';
+import {getCartProducts , addToCart , updateQuantity , removeAllFromCart} from '../controllers/cartController.js';
 
 const router = express.Router();
 
 
-
+router.get('/', protectRoute, getCartProducts)
+router.post('/',protectRoute, addToCart);
+router.delete('/', protectRoute, removeAllFromCart);
+router.put('/:id', protectRoute, updateQuantity);
 
 
 
